@@ -1,5 +1,5 @@
 ####################################################
-# S3 Bucket for Unity Floating License Server temp storage
+# S3 Bucket for temp storage
 ####################################################
 # This bucket will eventually be mounted to the EC2 instance running the service
 
@@ -14,7 +14,7 @@ resource "aws_s3_bucket" "unity_license_server_bucket" {
   bucket_prefix = var.unity_license_server_bucket_name
 
   tags = merge(var.tags, {
-    Name = "${local.name_prefix}-s3-bucket"
+    Name = "${var.name}-s3-bucket"
   })
 }
 
@@ -57,7 +57,7 @@ resource "aws_s3_object" "unity_license_file" {
 
 resource "awscc_secretsmanager_secret" "admin_password_arn" {
   count       = var.unity_license_server_admin_password_arn == null ? 1 : 0
-  name        = "${local.name_prefix}-admin-password"
+  name        = "${var.name}-admin-password"
   description = "The Unity Floating License Server admin password."
 
   generate_secret_string = {
@@ -84,24 +84,23 @@ resource "aws_security_group" "unity_license_server_sg" {
   })
 }
 
-resource "aws_vpc_security_group_ingress_rule" "ingress_from_client_sg" {
-  count             = !local.eni_provided ? 1 : 0
-  security_group_id = aws_security_group.unity_license_server_sg[0].id
-  description       = "Ingress from Unity Client Security Group"
-  ip_protocol       = "TCP"
-  from_port         = var.unity_license_server_port
-  to_port           = var.unity_license_server_port
-  #referenced_security_group_id = aws_security_group.unity_client_sg.id
+# Ingress rule from ALB, if created
+resource "aws_vpc_security_group_ingress_rule" "unity_license_server_ingress_from_alb_8080" {
+  #checkov:skip=CKV_AWS_260:Dashboard is password-protected
 
-  ################################################################################################################ TEST -- DELETE
-  cidr_ipv4 = "0.0.0.0/0"
-  ################################################################################################################ TEST -- DELETE
+  count                        = var.create_alb ? 1 : 0
+  security_group_id            = aws_security_group.unity_license_server_sg[0].id
+  referenced_security_group_id = aws_security_group.unity_license_server_alb_sg[0].id
+  description                  = "Allows HTTP traffic on from the Application Load Balancer"
+  from_port                    = var.unity_license_server_port
+  to_port                      = var.unity_license_server_port
+  ip_protocol                  = "TCP"
 }
 
-resource "aws_vpc_security_group_egress_rule" "egress_all" {
-  # checkov:skip=CKV_AWS_382: Ensure no security groups allow egress from 0.0.0.0:0 to port -1
+# Egress rule for all outbound traffic
+resource "aws_vpc_security_group_egress_rule" "unity_license_server_egress_all" {
+  #checkov:skip=CKV_AWS_382
 
-  count             = !local.eni_provided ? 1 : 0
   security_group_id = aws_security_group.unity_license_server_sg[0].id
   description       = "Allow all outbound traffic"
   ip_protocol       = "-1"
@@ -196,9 +195,27 @@ resource "aws_iam_role_policy" "access_policy" {
         Resource = [
           local.admin_password_arn
         ]
+      },
+      # SSM access policy
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:UpdateInstanceInformation",
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel"
+        ]
+        Resource = "*"
       }
     ]
   })
+}
+
+# AmazonSSMManagedInstanceCore managed policy
+resource "aws_iam_role_policy_attachment" "ssm_policy" {
+  role       = aws_iam_role.ec2_access_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 resource "aws_iam_instance_profile" "ec2_profile" {
@@ -210,11 +227,13 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 resource "aws_instance" "unity_license_server" {
   # checkov:skip=CKV_AWS_126: Ensure that detailed monitoring is enabled for EC2 instances
 
-  ami                  = var.unity_license_server_instance_ami_id
-  instance_type        = var.unity_license_server_instance_type
-  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
-  ebs_optimized        = true
-  monitoring           = var.enable_instance_detailed_monitoring
+  ami                     = var.unity_license_server_instance_ami_id
+  instance_type           = var.unity_license_server_instance_type
+  iam_instance_profile    = aws_iam_instance_profile.ec2_profile.name
+  ebs_optimized           = true
+  monitoring              = var.enable_instance_detailed_monitoring
+  disable_api_termination = var.enable_instance_termination_protection
+
 
   metadata_options {
     http_endpoint               = "enabled"
@@ -250,32 +269,18 @@ resource "aws_instance" "unity_license_server" {
     })
   })
 
-  /*
-  ################################################################################################################ TEST -- DELETE
-  user_data = templatefile("${path.module}/scripts/user_data.tpl", {
-    TEST_DELETE_SCRIPT = templatefile("${path.module}/scripts/TEST_DELETE.sh", {
-      license_server_file_name = basename(var.unity_license_server_file_path)
-      license_server_name      = var.unity_license_server_name
-      license_server_port      = var.unity_license_server_port
-      s3_bucket_name           = aws_s3_bucket.unity_license_server_bucket.id
-      iam_role_name            = aws_iam_role.ec2_access_role.name
-    })
-  })
-  ################################################################################################################ TEST -- DELETE
-  */
-
   tags = merge(var.tags, {
-    Name = "${local.name_prefix}-ec2"
+    Name = "${var.name}-ec2"
   })
 
   # Wait for instance to be ready
   user_data_replace_on_change = true
-}
 
-# Add SSM permissions to EC2 role to be able to check when user data script finishes execution
-resource "aws_iam_role_policy_attachment" "ssm" {
-  role       = aws_iam_role.ec2_access_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+  depends_on = [
+    aws_network_interface.unity_license_server_eni,
+    aws_eip.unity_license_server_eip,
+    aws_security_group.unity_license_server_sg
+  ]
 }
 
 # Data source to check instance status
@@ -285,8 +290,15 @@ data "aws_instance" "unity_license_server" {
 }
 
 # Resource to wait for instance to be ready and user data to complete
+/*
 resource "null_resource" "wait_for_user_data" {
-  depends_on = [data.aws_instance.unity_license_server]
+  depends_on = [
+    data.aws_instance.unity_license_server,
+    aws_lb.unity_license_server_alb,
+    aws_lb_listener.unity_license_server_https_dashboard_listener,
+    aws_lb_listener.unity_license_server_https_dashboard_redirect,
+    aws_lb_target_group_attachment.unity_license_server
+  ]
 
   provisioner "local-exec" {
     command = <<-EOF
@@ -323,6 +335,46 @@ resource "null_resource" "wait_for_user_data" {
         echo "Timeout waiting for user data script completion"
         exit 1
       fi
+    EOF
+  }
+}
+*/
+resource "null_resource" "wait_for_user_data" {
+  depends_on = [
+    data.aws_instance.unity_license_server,
+    aws_lb.unity_license_server_alb,
+    aws_lb_listener.unity_license_server_https_dashboard_listener,
+    aws_lb_listener.unity_license_server_https_dashboard_redirect,
+    aws_lb_target_group_attachment.unity_license_server
+  ]
+
+  provisioner "local-exec" {
+    command = <<-EOF
+      # Wait for instance to be ready (up to 10 minutes)
+      ATTEMPTS=60
+      until aws ec2 describe-instance-status --instance-ids ${aws_instance.unity_license_server.id} --query "InstanceStatuses[0].InstanceStatus.Status" --output text | grep -q "ok" || [ $ATTEMPTS -eq 0 ]; do
+        sleep 10
+        ATTEMPTS=$((ATTEMPTS-1))
+      done
+
+      if [ $ATTEMPTS -eq 0 ]; then
+        echo "Timeout waiting for instance to be ready"
+        exit 1
+      fi
+
+      # Wait for user data script completion by searching for the end user data script token echoed at the end of the script (up to 15 minutes)
+      ATTEMPTS=90
+      until aws ec2 get-console-output --instance-id ${aws_instance.unity_license_server.id} --output text | grep -q "[END_UDS_TKN]" || [ $ATTEMPTS -eq 0 ]; do
+        sleep 10
+        ATTEMPTS=$((ATTEMPTS-1))
+      done
+
+      if [ $ATTEMPTS -eq 0 ]; then
+        echo "Timeout waiting for user data script completion"
+        exit 1
+      fi
+
+      echo "User data script completed successfully"
     EOF
   }
 }

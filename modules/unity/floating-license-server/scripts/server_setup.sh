@@ -6,6 +6,12 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] Installing prerequisites..."
 apt-get update
 apt-get install -y fuse3 s3fs unzip expect
 
+# Install and start SSM Agent
+#echo "[$(date '+%Y-%m-%d %H:%M:%S')] Installing and starting SSM Agent..."
+#snap install amazon-ssm-agent --classic
+#systemctl enable snap.amazon-ssm-agent.amazon-ssm-agent.service
+#systemctl start snap.amazon-ssm-agent.amazon-ssm-agent.service
+
 # Install AWS CLI v2
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Installing AWS CLI v2..."
 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
@@ -19,7 +25,7 @@ chown ubuntu:ubuntu /mnt/s3
 chmod 755 /mnt/s3
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Mounting S3 bucket..."
-s3fs "${s3_bucket_name}" /mnt/s3 -o iam_role="${iam_role_name}" -o allow_other -o uid=$(id -u ubuntu) -o gid=$(id -g ubuntu)
+s3fs "${s3_bucket_name}" /mnt/s3 -o iam_role="${iam_role_name}" -o allow_other -o uid=$(id -u ubuntu) -o gid=$(id -g ubuntu) -o stat_cache_expire=1 -o use_cache=/tmp -o del_cache
 
 # Create the unity-licensing-server group
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Creating unity-licensing-server group..."

@@ -5,7 +5,7 @@
 variable "name" {
   type        = string
   description = "The name applied to resources in the Unity Floating License Server module."
-  default     = "unity-floating-license-server"
+  default     = "unity-license-server"
 }
 
 variable "tags" {
@@ -35,7 +35,7 @@ variable "vpc_subnet" {
 
 variable "existing_eni_id" {
   type        = string
-  default     = "eni-06266d5820d250fb9" #null
+  default     = null
   description = "ID of an existing Elastic Network Interface (ENI) to use for the EC2 instance running the Unity Floating License Server, as its registration will be binded to it. If not provided, a new ENI will be created."
 }
 
@@ -43,6 +43,68 @@ variable "add_eni_public_ip" {
   type        = bool
   default     = true
   description = "If true and \"existing_eni_id\" is not provided, an Elastic IP (EIP) will be created and associated with the newly created Elastic Network Interface (ENI) to be used with the Unity Floating License Server. If \"existing_eni_id\" is provided, this variable is ignored and no new EIP will be added to the provided ENI."
+}
+
+#############################################################
+# Application Load Balancer
+#############################################################
+
+variable "create_alb" {
+  type        = bool
+  description = "Set this flag to true to create an Application Load Balancer for the Unity License Server dashboard."
+  default     = true
+}
+
+variable "alb_is_internal" {
+  type        = bool
+  description = "Set this flag to determine whether the Application Load Balancer to create is internal (true) or external (false). Value is ignored if no ALB is created."
+  default     = false
+}
+
+variable "alb_subnets" {
+  type        = list(string)
+  description = "The subnets in which the Application Load Balancer will be deployed."
+
+  validation {
+    condition     = !var.create_alb || length(var.alb_subnets) > 0
+    error_message = "The alb_subnets variable must be set if create_alb is true."
+  }
+  default = []
+}
+
+variable "alb_certificate_arn" {
+  type        = string
+  description = "The ARN of the SSL certificate to use for the Application Load Balancer."
+
+  validation {
+    condition     = !var.create_alb || var.alb_certificate_arn != null
+    error_message = "The alb_certificate_arn variable must be set if create_alb is true."
+  }
+  default = null
+}
+
+variable "enable_alb_deletion_protection" {
+  type        = bool
+  description = "Enables deletion protection for the Application Load Balancer. Defaults to true."
+  default     = true
+}
+
+variable "enable_alb_access_logs" {
+  type        = bool
+  description = "Enables access logging for the Application Load Balancer used by Unity License Server. Defaults to true."
+  default     = true
+}
+
+variable "alb_access_logs_prefix" {
+  type        = string
+  description = "Log prefix for Unity License Server Application Load Balancer access logs. If null the project prefix and module name are used."
+  default     = null
+}
+
+variable "alb_access_logs_bucket" {
+  type        = string
+  description = "ID of the S3 bucket for Application Load Balancer access log storage. If access logging is enabled and this is null the module creates a bucket."
+  default     = null
 }
 
 #############################################################
@@ -71,6 +133,12 @@ variable "enable_instance_detailed_monitoring" {
   type        = bool
   default     = false
   description = "Enables detailed monitoring for the instance by increasing the frequency of metric collection from 5-minute intervals to 1-minute intervalss in CloudWatch to provide more granular data. Note this will result in increased cost."
+}
+
+variable "enable_instance_termination_protection" {
+  type        = bool
+  default     = true
+  description = "If true, enables EC2 instance termination protection from AWS APIs and console."
 }
 
 ####################################################
@@ -102,6 +170,6 @@ variable "unity_license_server_name" {
 
 variable "unity_license_server_port" {
   type        = string
-  description = "Port the Unity Floating License Server will listing on (between 1025 and 65535). Defaults to 8080."
+  description = "Port the Unity Floating License Server will listen on (between 1025 and 65535). Defaults to 8080."
   default     = "8080"
 }

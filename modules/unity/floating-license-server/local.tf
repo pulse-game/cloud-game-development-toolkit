@@ -1,5 +1,4 @@
 locals {
-  name_prefix = "unity-floating-license-server"
 
   # Boolean determining if the ENI was provided by the user (true) or created through the script (false)
   eni_provided = var.existing_eni_id != null

@@ -14,3 +14,4 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] Creating completion flag..."
 touch /tmp/user-data-complete
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] User data script completed"
+echo "[END_UDS_TKN]" | tee /dev/console

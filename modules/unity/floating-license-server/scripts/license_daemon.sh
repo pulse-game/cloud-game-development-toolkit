@@ -8,13 +8,19 @@ apt-get install -y inotify-tools
 
 # Create the watch script
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Creating watch script..."
-cat << WATCHSCRIPT > /opt/UnityLicensingServer/watch_for_license_upload.sh
+cat << 'WATCHSCRIPT' > /opt/UnityLicensingServer/watch_for_license_upload.sh
 #!/bin/bash
 
 # Set up logging
-exec 1> >(logger -s -t $(basename \$0)) 2>&1
+exec 1> >(logger -s -t $(basename $0)) 2>&1
 
 echo "Starting license file watch process for filename: ${license_server_name}.zip"
+
+# Function to refresh the s3fs mount
+refresh_s3fs_mount() {
+    echo "Refreshing S3 mount..."
+    ls -la /mnt/s3 > /dev/null 2>&1
+}
 
 # Function to process the license file
 process_license_file() {
@@ -46,7 +52,7 @@ set timeout 30
 spawn bash
 expect "$"
 
-# Run the import command (using full paths)
+# Run the Unity Licensing Server import command (using full paths)
 send "cd /opt/UnityLicensingServer && sudo ./Unity.Licensing.Server import ${license_server_name}.zip\r"
 expect {
     "Enter the index number of the toolset that should be used by default:" {
@@ -59,6 +65,10 @@ expect {
     }
     timeout {
         puts "Timeout waiting for completion"
+        exit 2
+    }
+    eof {
+        puts "Unexpected end of file"
         exit 1
     }
 }
@@ -70,7 +80,7 @@ IMPORTSCRIPT
     echo "Running import script..."
     cd /opt/UnityLicensingServer
     ./import.exp 2>&1 | tee /tmp/import_execution.log
-    IMPORT_STATUS=\$?
+    IMPORT_STATUS=$?
 
     # Capture all relevant logs
     echo "--- Import Execution Log ---" >> /tmp/import_debug.log
@@ -80,7 +90,7 @@ IMPORTSCRIPT
     echo "--- Current Directory Contents ---" >> /tmp/import_debug.log
     ls -la >> /tmp/import_debug.log
 
-    if [ \$IMPORT_STATUS -eq 0 ]; then
+    if [ $IMPORT_STATUS -eq 0 ]; then
         echo "License import successful"
 
         # Restart the Unity License Server
@@ -89,13 +99,13 @@ IMPORTSCRIPT
 
         # Move the processed file to a 'processed' folder
         mkdir -p /mnt/s3/processed
-        mv /mnt/s3/${license_server_name}.zip /mnt/s3/processed/${license_server_name}.zip.\$(date +%Y%m%d_%H%M%S)
+        mv /mnt/s3/${license_server_name}.zip /mnt/s3/processed/${license_server_name}.zip.$(date +%Y%m%d_%H%M%S)
 
         # Copy debug logs to S3
-        cp /tmp/import_debug.log /mnt/s3/processed/import_debug.\$(date +%Y%m%d_%H%M%S).log
+        cp /tmp/import_debug.log /mnt/s3/processed/import_debug.$(date +%Y%m%d_%H%M%S).log
 
         # Create success flag file
-        echo "Import completed successfully and server restarted at \$(date)" > /mnt/s3/import_success.txt
+        echo "Import completed successfully and server restarted at $(date)" > /mnt/s3/import_success.txt
 
         # Stop the watch service
         sudo systemctl stop unity-license-watch
@@ -104,46 +114,55 @@ IMPORTSCRIPT
         echo "License import failed"
         # Move the file to a 'failed' folder
         mkdir -p /mnt/s3/failed
-        mv /mnt/s3/${license_server_name}.zip /mnt/s3/failed/${license_server_name}.zip.\$(date +%Y%m%d_%H%M%S)
+        mv /mnt/s3/${license_server_name}.zip /mnt/s3/failed/${license_server_name}.zip.$(date +%Y%m%d_%H%M%S)
 
         # Copy debug logs to S3
-        cp /tmp/import_debug.log /mnt/s3/failed/import_debug.\$(date +%Y%m%d_%H%M%S).log
+        cp /tmp/import_debug.log /mnt/s3/failed/import_debug.$(date +%Y%m%d_%H%M%S).log
 
         # Create error flag file
-        echo "Import failed at \$(date)" > /mnt/s3/import_error.txt
+        echo "Import failed at $(date)" > /mnt/s3/import_error.txt
         return 1
     fi
 }
+
+# Initial refresh of the mount
+refresh_s3fs_mount
 
 # Main watch loop combining inotify and periodic checks
 (
     # Watch for file system events
     inotifywait -m -e create,moved_to /mnt/s3 &
-    INOTIFY_PID=\$!
+    INOTIFY_PID=$!
 
     while true; do
+        # Refresh the mount before checking
+        refresh_s3fs_mount
+
         # Check if file exists (periodic check)
         if [ -f "/mnt/s3/${license_server_name}.zip" ]; then
             echo "File found through periodic check"
             process_license_file
-            if [ \$? -eq 0 ]; then
-                kill \$INOTIFY_PID
+            if [ $? -eq 0 ]; then
+                kill $INOTIFY_PID
                 exit 0
             fi
         fi
 
-        sleep 5
+        sleep 10
     done
 ) &
 
 # Wait for either inotify events or periodic checks
 while read -r directory events filename; do
-    echo "Event '\$events' detected on file: \$filename"
+    echo "Event '$events' detected on file: $filename"
 
-    if [ "\$filename" = "${license_server_name}.zip" ]; then
+    # Refresh the mount when an event is detected
+    refresh_s3fs_mount
+
+    if [ "$filename" = "${license_server_name}.zip" ]; then
         echo "Target file detected through inotify"
         process_license_file
-        if [ \$? -eq 0 ]; then
+        if [ $? -eq 0 ]; then
             exit 0
         fi
     fi
