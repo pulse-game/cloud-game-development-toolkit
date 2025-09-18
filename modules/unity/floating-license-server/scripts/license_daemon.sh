@@ -16,6 +16,12 @@ exec 1> >(logger -s -t $(basename $0)) 2>&1
 
 echo "Starting license file watch process for filename: ${license_server_name}.zip"
 
+# Cleanup function for background processes
+cleanup() {
+    kill $(jobs -p) 2>/dev/null
+}
+trap cleanup EXIT
+
 # Function to refresh the s3fs mount
 refresh_s3fs_mount() {
     echo "Refreshing S3 mount..."
@@ -42,7 +48,7 @@ process_license_file() {
 
     # Create expect script for import
     echo "Creating expect script..."
-    cat << IMPORTSCRIPT > /opt/UnityLicensingServer/import.exp
+    cat << 'IMPORTSCRIPT' > /opt/UnityLicensingServer/import.exp
 #!/usr/bin/expect -f
 log_file /tmp/unity_import.log
 exp_internal 1
@@ -60,15 +66,15 @@ expect {
         exp_continue
     }
     "Successfully imported licensing files" {
-        puts "Import successful"
+        puts "IMPORT_SUCCESSFUL"
         exit 0
     }
     timeout {
-        puts "Timeout waiting for completion"
+        puts "TIMEOUT_ERROR"
         exit 2
     }
     eof {
-        puts "Unexpected end of file"
+        puts "UNEXPECTED_EOF"
         exit 1
     }
 }
@@ -76,21 +82,33 @@ IMPORTSCRIPT
 
     chmod +x /opt/UnityLicensingServer/import.exp
 
-    # Run the import script
+    # Run the import script and capture output
     echo "Running import script..."
     cd /opt/UnityLicensingServer
-    ./import.exp 2>&1 | tee /tmp/import_execution.log
+    OUTPUT=$(./import.exp 2>&1)
     IMPORT_STATUS=$?
 
     # Capture all relevant logs
-    echo "--- Import Execution Log ---" >> /tmp/import_debug.log
-    cat /tmp/import_execution.log >> /tmp/import_debug.log
-    echo "--- Unity Import Log ---" >> /tmp/import_debug.log
-    cat /tmp/unity_import.log >> /tmp/import_debug.log
-    echo "--- Current Directory Contents ---" >> /tmp/import_debug.log
-    ls -la >> /tmp/import_debug.log
+    {
+        echo "--- Import Execution Output ---"
+        echo "$OUTPUT"
+        echo "--- Unity Import Log ---"
+        cat /tmp/unity_import.log
+        echo "--- Current Directory Contents ---"
+        ls -la
+    } >> /tmp/import_debug.log
 
-    if [ $IMPORT_STATUS -eq 0 ]; then
+    # Check for timeout or specific error conditions
+    if [ $IMPORT_STATUS -eq 2 ] || echo "$OUTPUT" | grep -q "TIMEOUT_ERROR"; then
+        echo "Import timed out"
+        IMPORT_STATUS=1
+    elif echo "$OUTPUT" | grep -q "UNEXPECTED_EOF"; then
+        echo "Import ended unexpectedly"
+        IMPORT_STATUS=1
+    fi
+
+    # Verify success condition
+    if [ $IMPORT_STATUS -eq 0 ] && echo "$OUTPUT" | grep -q "IMPORT_SUCCESSFUL"; then
         echo "License import successful"
 
         # Restart the Unity License Server
@@ -120,7 +138,7 @@ IMPORTSCRIPT
         cp /tmp/import_debug.log /mnt/s3/failed/import_debug.$(date +%Y%m%d_%H%M%S).log
 
         # Create error flag file
-        echo "Import failed at $(date)" > /mnt/s3/import_error.txt
+        echo "Import failed at $(date). Exit code: $IMPORT_STATUS" > /mnt/s3/import_error.txt
         return 1
     fi
 }
