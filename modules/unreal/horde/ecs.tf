@@ -82,6 +82,10 @@ resource "aws_ecs_task_definition" "unreal_horde_task_definition" {
           value = "https://${var.fully_qualified_domain_name}"
         },
         {
+          name  = "Horde__ConfigPath"
+          value = var.horde_config_path
+        },
+        {
           name  = "P4TRUST"
           value = "/app/config/.p4trust"
         },

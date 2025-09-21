@@ -25,6 +25,11 @@ variable "environment" {
   default     = "Development"
 }
 
+variable "horde_config_path" {
+  type        = string
+  description = "Perforce depot path to Horde configuration file"
+}
+
 variable "tags" {
   type = map(any)
   default = {
