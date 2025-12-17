@@ -264,13 +264,9 @@ variable "system_managed_node_min_size" {
 
 variable "kubernetes_version" {
   type        = string
-  default     = "1.31"
+  default     = "1.34"
   description = "Kubernetes version to be used by the EKS cluster."
   nullable    = false
-  validation {
-    condition     = contains(["1.24", "1.25", "1.26", "1.27", "1.28", "1.29", "1.30", "1.31"], var.kubernetes_version)
-    error_message = "Version number must be supported version in AWS Kubernetes"
-  }
 }
 
 variable "eks_cluster_cloudwatch_log_group_prefix" {
