@@ -45,7 +45,7 @@ resource "kubernetes_namespace_v1" "unreal_cloud_ddc" {
   }
 }
 
-resource "kubernetes_service_account" "unreal_cloud_ddc_service_account" {
+resource "kubernetes_service_account_v1" "unreal_cloud_ddc_service_account" {
   depends_on = [kubernetes_namespace_v1.unreal_cloud_ddc]
   metadata {
     name        = var.unreal_cloud_ddc_service_account_name
@@ -75,7 +75,7 @@ resource "helm_release" "unreal_cloud_ddc" {
   version      = "${var.unreal_cloud_ddc_version}+helm"
   reset_values = true
   depends_on = [
-    kubernetes_service_account.unreal_cloud_ddc_service_account,
+    kubernetes_service_account_v1.unreal_cloud_ddc_service_account,
     kubernetes_namespace_v1.unreal_cloud_ddc,
     aws_ecr_pull_through_cache_rule.unreal_cloud_ddc_ecr_pull_through_cache_rule
   ]
