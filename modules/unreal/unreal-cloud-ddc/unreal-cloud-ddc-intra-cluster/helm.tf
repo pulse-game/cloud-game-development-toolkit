@@ -38,7 +38,7 @@ module "eks_blueprints_all_other_addons" {
   }
 }
 
-resource "kubernetes_namespace" "unreal_cloud_ddc" {
+resource "kubernetes_namespace_v1" "unreal_cloud_ddc" {
   depends_on = [module.eks_blueprints_all_other_addons]
   metadata {
     name = var.unreal_cloud_ddc_namespace
@@ -70,7 +70,7 @@ resource "aws_ecr_pull_through_cache_rule" "unreal_cloud_ddc_ecr_pull_through_ca
 resource "helm_release" "unreal_cloud_ddc" {
   name         = "unreal-cloud-ddc"
   chart        = "unreal-cloud-ddc"
-  repository   = "oci://${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/github/epicgames"
+  repository   = "oci://${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.region}.amazonaws.com/github/epicgames"
   namespace    = var.unreal_cloud_ddc_namespace
   version      = "${var.unreal_cloud_ddc_version}+helm"
   reset_values = true
