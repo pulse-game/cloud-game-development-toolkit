@@ -76,7 +76,7 @@ resource "helm_release" "unreal_cloud_ddc" {
   reset_values = true
   depends_on = [
     kubernetes_service_account.unreal_cloud_ddc_service_account,
-    kubernetes_namespace.unreal_cloud_ddc,
+    kubernetes_namespace_v1.unreal_cloud_ddc,
     aws_ecr_pull_through_cache_rule.unreal_cloud_ddc_ecr_pull_through_cache_rule
   ]
   values = var.unreal_cloud_ddc_helm_values
