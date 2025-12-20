@@ -46,7 +46,7 @@ resource "kubernetes_namespace_v1" "unreal_cloud_ddc" {
 }
 
 resource "kubernetes_service_account" "unreal_cloud_ddc_service_account" {
-  depends_on = [kubernetes_namespace.unreal_cloud_ddc]
+  depends_on = [kubernetes_namespace_v1.unreal_cloud_ddc]
   metadata {
     name        = var.unreal_cloud_ddc_service_account_name
     namespace   = var.unreal_cloud_ddc_namespace
