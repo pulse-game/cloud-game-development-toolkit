@@ -8,7 +8,6 @@ resource "aws_iam_role" "ebs_csi_iam_role" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
     Statement = [{
-      Sid    = ""
       Effect = "Allow",
       Principal = {
         Federated = data.aws_iam_openid_connect_provider.oidc_provider.arn
@@ -22,6 +21,11 @@ resource "aws_iam_role" "ebs_csi_iam_role" {
       }
     }]
   })
+  lifecycle {
+    ignore_changes = [
+      assume_role_policy,
+    ]
+  }
   tags = merge(var.tags,
     {
       Name = "${local.name_prefix}-ebs-csi-sa-role"
