@@ -6,31 +6,25 @@ resource "aws_iam_role" "ebs_csi_iam_role" {
   name_prefix = "${local.name_prefix}-ebs-csi-sa-role-"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17",
+    Version = "2012-10-17"
     Statement = [{
-      Effect = "Allow",
+      Effect = "Allow"
       Principal = {
         Federated = data.aws_iam_openid_connect_provider.oidc_provider.arn
-      },
-      Action = "sts:AssumeRoleWithWebIdentity",
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = {
-          "${data.aws_iam_openid_connect_provider.oidc_provider.arn}:sub" = "system:serviceaccount:kube-system:ebs-csi-controller-sa"
-          "${data.aws_iam_openid_connect_provider.oidc_provider.arn}:aud" = "sts.amazonaws.com"
+          "${trimprefix(data.aws_iam_openid_connect_provider.oidc_provider.url, "https://")}:sub" = "system:serviceaccount:kube-system:ebs-csi-controller-sa"
+          "${trimprefix(data.aws_iam_openid_connect_provider.oidc_provider.url, "https://")}:aud" = "sts.amazonaws.com"
         }
       }
     }]
   })
-  lifecycle {
-    ignore_changes = [
-      assume_role_policy,
-    ]
-  }
-  tags = merge(var.tags,
-    {
-      Name = "${local.name_prefix}-ebs-csi-sa-role"
-    }
-  )
+
+  tags = merge(var.tags, {
+    Name = "${local.name_prefix}-ebs-csi-sa-role"
+  })
 }
 
 resource "aws_iam_role_policy_attachment" "ebs_csi_policy_attacment" {
