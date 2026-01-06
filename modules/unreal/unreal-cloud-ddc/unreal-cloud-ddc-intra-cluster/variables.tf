@@ -72,7 +72,7 @@ variable "oidc_credentials_secret_manager_arn" {
 variable "unreal_cloud_ddc_version" {
   type        = string
   description = "Version of the Unreal Cloud DDC Helm chart."
-  default     = "1.2.0"
+  default     = "1.4.0"
 }
 
 variable "unreal_cloud_ddc_service_account_name" {
